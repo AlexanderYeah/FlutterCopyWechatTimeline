@@ -1,5 +1,6 @@
 import 'package:copy_wechat_timeline/model/timeline_model/comment.dart';
 import 'package:copy_wechat_timeline/model/timeline_model/like.dart';
+import 'package:copy_wechat_timeline/model/timeline_model/user.dart';
 import 'package:copy_wechat_timeline/styles/text_style.dart';
 import 'package:copy_wechat_timeline/utils/date_tool.dart';
 import 'package:copy_wechat_timeline/widget/text_expand.dart';
@@ -36,12 +37,31 @@ class _TimelinePageState extends State<TimelinePage>
   // 数据
   List<TimelineModel> _items = [];
 
+  // 是否显示评论输入框
+  bool _isShowInput = false;
+  // 是否展开列表
+  bool _isShowEmoji = false;
+  // 是否输入内容
+  bool _isInputWords = false;
+  // 评论输入框
+  final TextEditingController _textEditingController = TextEditingController();
+  // 输入框焦点
+  final FocusNode _focusNode = FocusNode();
+  // 键盘输入高度
+  final double _keyboardheight = 200;
+
   @override
   void initState() {
     // TODO: implement initState
     super.initState();
     // 初始化遮罩层管理对象
     _overlayState = Overlay.of(context);
+    // 监控输入
+    _textEditingController.addListener(() {
+      setState(() {
+        _isInputWords = _textEditingController.text.isNotEmpty;
+      });
+    });
     // 监听滚动
     _scrollController.addListener(() {
       // 滚动条数超过 200 单位的时候开始渐变
@@ -74,6 +94,8 @@ class _TimelinePageState extends State<TimelinePage>
   void dispose() {
     // TODO: implement dispose
     super.dispose();
+    _textEditingController.dispose();
+    _focusNode.dispose();
     _scrollController.dispose();
     _animatedContainer.dispose();
   }
@@ -101,6 +123,7 @@ class _TimelinePageState extends State<TimelinePage>
       // 不加这个属性 渐变效果很是生硬
       extendBodyBehindAppBar: true,
       appBar: _buildAppbar(),
+      bottomNavigationBar: _isShowInput ? _buildCommentBar() : null,
       body: CustomScrollView(
         controller: _scrollController,
         slivers: [
@@ -319,7 +342,13 @@ class _TimelinePageState extends State<TimelinePage>
                       style: TextStyle(color: Colors.white))),
             if (constraints.maxWidth > 140)
               TextButton.icon(
-                  onPressed: () {},
+                  onPressed: () {
+                    _currentItem = item;
+                    // 评论操作
+                    _onSwitchCommentBar();
+                    // 关闭弹出菜单
+                    _onCloseMenu();
+                  },
                   icon: Icon(
                     Icons.comment_sharp,
                     color: Colors.white,
@@ -401,6 +430,7 @@ class _TimelinePageState extends State<TimelinePage>
     );
   }
 
+  // 评论列表item
   _buildCommentItem(Comment item) {
     return Container(
       padding: EdgeInsets.all(2),
@@ -442,6 +472,102 @@ class _TimelinePageState extends State<TimelinePage>
             ],
           ))
         ],
+      ),
+    );
+  }
+
+  // 底部弹出评论栏
+  Widget _buildCommentBar() {
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 100),
+      child: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(color: Colors.grey[100]),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 评论输入框
+              Row(
+                children: [
+                  // 输入框
+                  Expanded(
+                      child: TextField(
+                    controller: _textEditingController,
+                    focusNode: _focusNode,
+                    keyboardType: TextInputType.text,
+                    textInputAction: TextInputAction.done,
+                    maxLines: 1,
+                    minLines: 1,
+                    style: const TextStyle(fontSize: 16, color: Colors.black87),
+                    decoration: InputDecoration(
+                        hintStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black26,
+                            letterSpacing: 2),
+                        fillColor: Colors.white,
+                        filled: true,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                        hintText: "评论",
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        )),
+                  )),
+                  const SpaceHorizontalWidget(),
+                  // 表情或者键盘图标
+                  GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _isShowEmoji = !_isShowEmoji;
+                        });
+                        if (_isShowEmoji) {
+                          _focusNode.unfocus();
+                        } else {
+                          _focusNode.requestFocus();
+                        }
+                      },
+                      child: Icon(
+                        _isShowEmoji
+                            ? Icons.keyboard_alt_outlined
+                            : Icons.mood_outlined,
+                        size: 32,
+                        color: Colors.black54,
+                      )),
+                  const SpaceHorizontalWidget(),
+                  // 发送按钮
+                  ElevatedButton(
+                      onPressed: !_isInputWords ? null : _onComment,
+                      child: const Text(
+                        "发送",
+                        style: TextStyle(fontSize: 16),
+                      ))
+                ],
+              )
+              // 下面是表情列表
+              ,
+              if (_isShowEmoji)
+                Container(
+                  margin: EdgeInsets.only(top: 5),
+                  padding: const EdgeInsets.all(4),
+                  height: _keyboardheight,
+                  child: GridView(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 7,
+                      mainAxisSpacing: 10,
+                      crossAxisSpacing: 10,
+                    ),
+                    children: List.generate(100, (index) {
+                      return Container(
+                        color: Colors.grey[200],
+                      );
+                    }),
+                  ),
+                )
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -510,5 +636,43 @@ class _TimelinePageState extends State<TimelinePage>
       _overlayEntry!.remove();
       _overlayEntry = null;
     }
+  }
+
+  // 评论操作
+  void _onComment() {
+    // 安全检查
+    if (_currentItem == null) return;
+
+    // 设置状态
+    setState(() {
+      _currentItem?.comments?.add(Comment(
+          content: _textEditingController.text,
+          publishDate: DateTime.now().toString(),
+          user: User(
+            uid: "fasdasdas",
+            nickname: "leo",
+            avator:
+                "https://tupian.qqw21.com/article/UploadPic/2021-3/202132721124233200.jpeg",
+          )));
+    });
+
+    //
+    _onSwitchCommentBar();
+    // 请求后台接口
+  }
+
+  // 切换评论输入栏
+  void _onSwitchCommentBar() {
+    setState(() {
+      _isShowInput = !_isShowInput;
+      if (_isShowInput) {
+        // 获取焦点
+        _focusNode.requestFocus();
+      } else {
+        // 释放焦点
+        _focusNode.unfocus();
+      }
+      _textEditingController.text = "";
+    });
   }
 }
